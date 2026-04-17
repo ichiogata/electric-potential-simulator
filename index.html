@@ -910,11 +910,31 @@
           autosize: true,
           margin: { l: 20, r: 20, b: 20, t: 20 },
           scene: { 
-            xaxis: { title: '列 (A-G)' },
-            yaxis: { title: '行 (1-7)' },
-            zaxis: { title: 'V (D4基準)', range: [-5, 5] },
+            xaxis: { 
+              title: '列 (A-G)',
+              showticklabels: true,
+              showspikes: false,
+              zeroline: false,
+            },
+            yaxis: { 
+              title: '行 (1-7)',
+              showticklabels: true,
+              showspikes: false,
+              zeroline: false,
+            },
+            zaxis: { 
+              title: 'V (D4基準)', 
+              range: [-5, 5],
+              showticklabels: true,
+              showspikes: false,
+              zeroline: false,
+            },
             aspectratio: { x: 1, y: 1, z: 0.6 },
-            camera: { eye: { x: 1.5, y: -1.5, z: 1.2 } },
+            camera: { 
+              eye: { x: 1.5, y: -1.5, z: 1.2 },
+              center: { x: 0, y: 0, z: 0 },
+              up: { x: 0, y: 0, z: 1 }
+            },
           },
         };
 
@@ -929,14 +949,13 @@
 
         Plotly.newPlot('plot', [plotConfig], layout, config);
 
-        // iPad用カスタムタッチ操作
         const plotDiv = document.getElementById('plot');
         if (!plotDiv) return;
 
         let touchState = {
           fingers: 0,
           startDistance: 0,
-          currentZoom: 1.5,  // 初期カメラ距離
+          currentZoom: 1.5,
           isRotating: false,
           isPinching: false,
           lastTouch: { x: 0, y: 0 }
@@ -985,7 +1004,6 @@
               const scale = currentDistance / touchState.startDistance;
               const newZoom = touchState.currentZoom / scale;
               
-              // ズーム範囲を制限
               const clampedZoom = Math.max(0.5, Math.min(5, newZoom));
               
               Plotly.relayout(plotDiv, {
@@ -993,12 +1011,11 @@
                   x: 1.5 * clampedZoom,
                   y: -1.5 * clampedZoom,
                   z: 1.2 * clampedZoom
-                }
+                },
+                'scene.camera.center': { x: 0, y: 0, z: 0 },
+                'scene.camera.up': { x: 0, y: 0, z: 1 }
               });
             }
-          } else if (e.touches.length === 1 && touchState.isRotating && !touchState.isPinching) {
-            // 1本指での回転は通常のPlotly動作に任せる
-            // カスタム処理は不要
           }
         };
 
@@ -1006,7 +1023,6 @@
           if (viewTab !== 0) return;
           
           if (e.touches.length === 0) {
-            // 全ての指が離れた時、現在のズームレベルを保存
             if (touchState.isPinching && plotDiv.layout && plotDiv.layout.scene && plotDiv.layout.scene.camera) {
               const eye = plotDiv.layout.scene.camera.eye;
               touchState.currentZoom = Math.sqrt(eye.x * eye.x + eye.y * eye.y + eye.z * eye.z) / Math.sqrt(1.5*1.5 + 1.5*1.5 + 1.2*1.2);
@@ -1016,7 +1032,6 @@
             touchState.isRotating = false;
             touchState.startDistance = 0;
           } else if (e.touches.length === 1) {
-            // 2本指から1本指に変わった時、回転モードに切り替え
             touchState.isPinching = false;
             touchState.isRotating = true;
             touchState.lastTouch = {
