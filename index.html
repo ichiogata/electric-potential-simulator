@@ -470,6 +470,8 @@
       width: 100%;
       height: 100%;
       touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
     }
     
     .modal-overlay {
@@ -913,7 +915,6 @@
             zaxis: { title: 'V (D4基準)', range: [-5, 5] },
             aspectratio: { x: 1, y: 1, z: 0.6 },
             camera: { eye: { x: 1.5, y: -1.5, z: 1.2 } },
-            dragmode: 'orbit',
           },
         };
 
@@ -921,25 +922,121 @@
           responsive: true,
           displayModeBar: true,
           displaylogo: false,
-          scrollZoom: true,
-          doubleClick: 'reset',
           modeBarButtonsToRemove: ['lasso2d', 'select2d'],
-          modeBarButtonsToAdd: [
-            {
-              name: 'リセット',
-              icon: Plotly.Icons.home,
-              click: function(gd) {
-                Plotly.relayout(gd, {
-                  'scene.camera': {
-                    eye: { x: 1.5, y: -1.5, z: 1.2 }
-                  }
-                });
-              }
-            }
-          ],
+          scrollZoom: false,
+          doubleClick: 'reset',
         };
 
         Plotly.newPlot('plot', [plotConfig], layout, config);
+
+        // iPad用カスタムタッチ操作
+        const plotDiv = document.getElementById('plot');
+        if (!plotDiv) return;
+
+        let touchState = {
+          fingers: 0,
+          startDistance: 0,
+          currentZoom: 1.5,  // 初期カメラ距離
+          isRotating: false,
+          isPinching: false,
+          lastTouch: { x: 0, y: 0 }
+        };
+
+        const handleTouchStart = (e) => {
+          if (viewTab !== 0) return;
+          
+          touchState.fingers = e.touches.length;
+          
+          if (e.touches.length === 2) {
+            e.preventDefault();
+            touchState.isPinching = true;
+            touchState.isRotating = false;
+            
+            const touch1 = e.touches[0];
+            const touch2 = e.touches[1];
+            touchState.startDistance = Math.hypot(
+              touch2.clientX - touch1.clientX,
+              touch2.clientY - touch1.clientY
+            );
+          } else if (e.touches.length === 1) {
+            touchState.isRotating = true;
+            touchState.isPinching = false;
+            touchState.lastTouch = {
+              x: e.touches[0].clientX,
+              y: e.touches[0].clientY
+            };
+          }
+        };
+
+        const handleTouchMove = (e) => {
+          if (viewTab !== 0) return;
+
+          if (e.touches.length === 2 && touchState.isPinching) {
+            e.preventDefault();
+            
+            const touch1 = e.touches[0];
+            const touch2 = e.touches[1];
+            const currentDistance = Math.hypot(
+              touch2.clientX - touch1.clientX,
+              touch2.clientY - touch1.clientY
+            );
+            
+            if (touchState.startDistance > 0) {
+              const scale = currentDistance / touchState.startDistance;
+              const newZoom = touchState.currentZoom / scale;
+              
+              // ズーム範囲を制限
+              const clampedZoom = Math.max(0.5, Math.min(5, newZoom));
+              
+              Plotly.relayout(plotDiv, {
+                'scene.camera.eye': {
+                  x: 1.5 * clampedZoom,
+                  y: -1.5 * clampedZoom,
+                  z: 1.2 * clampedZoom
+                }
+              });
+            }
+          } else if (e.touches.length === 1 && touchState.isRotating && !touchState.isPinching) {
+            // 1本指での回転は通常のPlotly動作に任せる
+            // カスタム処理は不要
+          }
+        };
+
+        const handleTouchEnd = (e) => {
+          if (viewTab !== 0) return;
+          
+          if (e.touches.length === 0) {
+            // 全ての指が離れた時、現在のズームレベルを保存
+            if (touchState.isPinching && plotDiv.layout && plotDiv.layout.scene && plotDiv.layout.scene.camera) {
+              const eye = plotDiv.layout.scene.camera.eye;
+              touchState.currentZoom = Math.sqrt(eye.x * eye.x + eye.y * eye.y + eye.z * eye.z) / Math.sqrt(1.5*1.5 + 1.5*1.5 + 1.2*1.2);
+            }
+            
+            touchState.isPinching = false;
+            touchState.isRotating = false;
+            touchState.startDistance = 0;
+          } else if (e.touches.length === 1) {
+            // 2本指から1本指に変わった時、回転モードに切り替え
+            touchState.isPinching = false;
+            touchState.isRotating = true;
+            touchState.lastTouch = {
+              x: e.touches[0].clientX,
+              y: e.touches[0].clientY
+            };
+          }
+        };
+
+        plotDiv.addEventListener('touchstart', handleTouchStart, { passive: false });
+        plotDiv.addEventListener('touchmove', handleTouchMove, { passive: false });
+        plotDiv.addEventListener('touchend', handleTouchEnd, { passive: false });
+
+        return () => {
+          if (plotDiv) {
+            plotDiv.removeEventListener('touchstart', handleTouchStart);
+            plotDiv.removeEventListener('touchmove', handleTouchMove);
+            plotDiv.removeEventListener('touchend', handleTouchEnd);
+          }
+        };
       }, [plotData, viewTab, contourInterval, showSurfaceContours, showProjectedContours]);
 
       return (
@@ -1143,7 +1240,7 @@
                 
                 {viewTab === 0 && (
                   <div className="touch-hint">
-                    📱 <strong>iPad操作:</strong> 1本指で回転 | 2本指でズーム・移動 | ダブルタップでリセット
+                    📱 <strong>iPad操作:</strong> 1本指ドラッグで回転 | 2本指ピンチでズーム | ズーム後も1本指で回転可能 | ダブルタップでリセット
                   </div>
                 )}
                 
