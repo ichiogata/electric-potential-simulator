@@ -469,9 +469,9 @@
     #plot {
       width: 100%;
       height: 100%;
+      touch-action: none;
     }
     
-    /* パスワードモーダル */
     .modal-overlay {
       position: fixed;
       top: 0;
@@ -559,6 +559,17 @@
       margin-top: -10px;
       margin-bottom: 10px;
     }
+    
+    .touch-hint {
+      background: #e8f5e9;
+      border: 1px solid #4caf50;
+      border-radius: 6px;
+      padding: 10px;
+      margin-bottom: 15px;
+      font-size: 12px;
+      color: #2e7d32;
+      line-height: 1.5;
+    }
   </style>
 </head>
 <body>
@@ -567,7 +578,6 @@
   <script type="text/babel">
     const { useState, useRef, useMemo, useCallback } = React;
 
-    // 定数定義
     const GRID_CONFIG = {
       ROWS: 7,
       COLS: 7,
@@ -587,7 +597,6 @@
 
     const PASSWORD = "shibuyagakunen";
 
-    // D4 = row 3, col 3 (0-indexed)
     const REFERENCE_POINT = { row: 3, col: 3, voltage: 0.0, label: 'D4(基準)' };
 
     const ELECTRODE_MODES = {
@@ -598,15 +607,14 @@
       dipole: { 
         label: '点電荷 (B4/F4)',
         electrodes: [
-          { row: 3, col: 1, voltage: 5.0, label: 'B4(+)' },    // B4 = +5V
-          REFERENCE_POINT,                                      // D4 = 0V (基準点)
-          { row: 3, col: 5, voltage: -5.0, label: 'F4(−)' },   // F4 = -5V
+          { row: 3, col: 1, voltage: 5.0, label: 'B4(+)' },
+          REFERENCE_POINT,
+          { row: 3, col: 5, voltage: -5.0, label: 'F4(−)' },
         ],
       },
       parallel: { 
         label: '平行平板 (A列/G列)',
         electrodes: [
-          // A列全体を+5V
           { row: 0, col: 0, voltage: 5.0, label: 'A1' },
           { row: 1, col: 0, voltage: 5.0, label: 'A2' },
           { row: 2, col: 0, voltage: 5.0, label: 'A3' },
@@ -614,8 +622,7 @@
           { row: 4, col: 0, voltage: 5.0, label: 'A5' },
           { row: 5, col: 0, voltage: 5.0, label: 'A6' },
           { row: 6, col: 0, voltage: 5.0, label: 'A7' },
-          REFERENCE_POINT,  // D4 = 0V (基準点)
-          // G列全体を-5V
+          REFERENCE_POINT,
           { row: 0, col: 6, voltage: -5.0, label: 'G1' },
           { row: 1, col: 6, voltage: -5.0, label: 'G2' },
           { row: 2, col: 6, voltage: -5.0, label: 'G3' },
@@ -632,8 +639,8 @@
         label: '点電荷',
         requirePassword: true,
         positions: [
-          { x: 1, y: 3, strength: 2.5 },   // B4 相対強度
-          { x: 5, y: 3, strength: -2.5 },  // F4 相対強度
+          { x: 1, y: 3, strength: 2.5 },
+          { x: 5, y: 3, strength: -2.5 },
         ],
       },
       parallel: {
@@ -702,7 +709,6 @@
     function App() {
       const { ROWS, COLS } = GRID_CONFIG;
       
-      // 状態管理
       const [data, setData] = useState(
         Array(ROWS).fill(null).map(() => Array(COLS).fill(""))
       );
@@ -716,19 +722,16 @@
       
       const inputRefs = useRef([]);
 
-      // 基準点の判定
       const isReferencePoint = useCallback((r, c) => {
         return r === REFERENCE_POINT.row && c === REFERENCE_POINT.col;
       }, []);
 
-      // 電極位置の判定
       const isElectrode = useCallback((r, c) => {
         const mode = ELECTRODE_MODES[electrodeMode];
         if (!mode) return false;
         return mode.electrodes.some(e => e.row === r && e.col === c);
       }, [electrodeMode]);
 
-      // 電極の電圧取得
       const getElectrodeVoltage = useCallback((r, c) => {
         const mode = ELECTRODE_MODES[electrodeMode];
         if (!mode) return null;
@@ -736,7 +739,6 @@
         return electrode ? electrode.voltage : null;
       }, [electrodeMode]);
 
-      // 電極モード変更時に電極値を設定
       React.useEffect(() => {
         if (electrodeMode !== 'none') {
           const newData = data.map((row, r) => 
@@ -749,9 +751,7 @@
         }
       }, [electrodeMode]);
 
-      // セル値変更（バリデーション付き）
       const handleCellChange = useCallback((r, c, val) => {
-        // 電極セルは変更不可
         if (isElectrode(r, c)) return;
 
         if (val === "") {
@@ -771,7 +771,6 @@
         }
       }, [data, isElectrode]);
 
-      // Enterキーでのフォーカス移動
       const handleKeyDown = useCallback((e, r, c) => {
         if (e.key === 'Enter') {
           e.preventDefault();
@@ -805,7 +804,6 @@
         }
       }, [ROWS, COLS]);
 
-      // 文字列から数値への変換
       const plotData = useMemo(() => {
         return data.map(row => row.map(v => {
           if (v === "") return 0;
@@ -814,7 +812,6 @@
         }));
       }, [data]);
 
-      // サンプルデータ生成（実際の処理）
       const generateSampleData = useCallback((type) => {
         const newData = Array(ROWS).fill(null).map((_, y) => 
           Array(COLS).fill(null).map((_, x) => {
@@ -829,7 +826,6 @@
               const { leftCol, rightCol, leftVoltage, rightVoltage } = SAMPLE_CONFIGS.parallel.electrodes;
               if (x === leftCol) return leftVoltage.toFixed(1);
               if (x === rightCol) return rightVoltage.toFixed(1);
-              // 線形補間 (A列=+5V から G列=-5V)
               const ratio = (x - leftCol) / (rightCol - leftCol);
               return (leftVoltage + (rightVoltage - leftVoltage) * ratio).toFixed(1);
             }
@@ -839,7 +835,6 @@
         setData(newData);
       }, [ROWS, COLS]);
 
-      // サンプルデータ読み込みボタン押下時
       const handleGenerateSample = useCallback((type) => {
         const config = SAMPLE_CONFIGS[type];
         if (config.requirePassword) {
@@ -850,7 +845,6 @@
         }
       }, [generateSampleData]);
 
-      // パスワード確認後の処理
       const handlePasswordSubmit = useCallback(() => {
         if (pendingSampleType) {
           generateSampleData(pendingSampleType);
@@ -859,17 +853,14 @@
         setPendingSampleType(null);
       }, [pendingSampleType, generateSampleData]);
 
-      // パスワードキャンセル
       const handlePasswordCancel = useCallback(() => {
         setModalOpen(false);
         setPendingSampleType(null);
       }, []);
 
-      // セルの背景色計算
       const getCellBackgroundColor = useCallback((val, r, c) => {
-        // 電極セルは特別なスタイル
         if (isElectrode(r, c)) {
-          return null; // CSSクラスで制御
+          return null;
         }
 
         if (val === "") return "white";
@@ -882,7 +873,6 @@
           : `rgba(52, 152, 219, ${intensity})`;
       }, [isElectrode]);
 
-      // グラフ更新
       React.useEffect(() => {
         const contourSettings = {
           start: -12,
@@ -922,15 +912,31 @@
             yaxis: { title: '行 (1-7)' },
             zaxis: { title: 'V (D4基準)', range: [-5, 5] },
             aspectratio: { x: 1, y: 1, z: 0.6 },
-            camera: { eye: { x: 1.5, y: -1.5, z: 1.2 } }
+            camera: { eye: { x: 1.5, y: -1.5, z: 1.2 } },
+            dragmode: 'orbit',
           },
         };
 
         const config = { 
           responsive: true,
           displayModeBar: true,
-          modeBarButtonsToRemove: ['lasso2d', 'select2d'],
           displaylogo: false,
+          scrollZoom: true,
+          doubleClick: 'reset',
+          modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+          modeBarButtonsToAdd: [
+            {
+              name: 'リセット',
+              icon: Plotly.Icons.home,
+              click: function(gd) {
+                Plotly.relayout(gd, {
+                  'scene.camera': {
+                    eye: { x: 1.5, y: -1.5, z: 1.2 }
+                  }
+                });
+              }
+            }
+          ],
         };
 
         Plotly.newPlot('plot', [plotConfig], layout, config);
@@ -965,9 +971,7 @@
           </div>
 
           <div className="main-grid">
-            {/* 左側：操作パネル */}
             <div>
-              {/* 電極モード選択 */}
               <div className="electrode-mode-panel">
                 <div className="electrode-mode-title">
                   ⚡ 電極モード選択
@@ -1009,21 +1013,16 @@
                 </div>
                 
                 <div className="grid-with-labels">
-                  {/* 左上の角（空白） */}
                   <div className="grid-label corner"></div>
                   
-                  {/* 列ラベル (A-G) */}
                   {COLUMN_LABELS.map((label, i) => (
                     <div key={`col-${i}`} className="grid-label">{label}</div>
                   ))}
                   
-                  {/* データ行 */}
                   {data.map((row, r) => (
                     <React.Fragment key={`row-${r}`}>
-                      {/* 行ラベル (1-7) */}
                       <div className="grid-label">{r + 1}</div>
                       
-                      {/* データセル */}
                       {row.map((val, c) => {
                         const isElec = isElectrode(r, c);
                         const isRef = isReferencePoint(r, c);
@@ -1125,7 +1124,6 @@
               </div>
             </div>
 
-            {/* 右側：グラフ表示 */}
             <div>
               <div className="graph-container">
                 <div className="tabs">
@@ -1142,6 +1140,12 @@
                     🗺️ 2D 等電位マップ
                   </button>
                 </div>
+                
+                {viewTab === 0 && (
+                  <div className="touch-hint">
+                    📱 <strong>iPad操作:</strong> 1本指で回転 | 2本指でズーム・移動 | ダブルタップでリセット
+                  </div>
+                )}
                 
                 <div id="plot"></div>
               </div>
