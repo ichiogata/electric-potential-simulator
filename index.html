@@ -242,24 +242,15 @@
     }
     
     .grid-input.electrode {
-      background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%) !important;
-      color: white;
+      border: 2px solid #f39c12;
+      background: rgba(243, 156, 18, 0.1) !important;
       font-weight: bold;
-      cursor: not-allowed;
-      border: 3px solid #d35400;
     }
     
     .grid-input.reference {
-      background: linear-gradient(135deg, #27ae60 0%, #229954 100%) !important;
-      color: white;
+      border: 2px solid #27ae60;
+      background: rgba(39, 174, 96, 0.1) !important;
       font-weight: bold;
-      cursor: not-allowed;
-      border: 3px solid #1e8449;
-    }
-    
-    .grid-input.electrode::placeholder,
-    .grid-input.reference::placeholder {
-      color: rgba(255,255,255,0.7);
     }
     
     @media screen and (max-width: 1024px) {
@@ -683,7 +674,8 @@
               🔒 理論値データの読み込み
             </div>
             <p style={{marginBottom: '15px', color: '#666', fontSize: '14px'}}>
-              {sampleType === 'dipole' ? '点電荷' : '平行平板'}の理論値を読み込むにはパスワードを入力してください。
+              {sampleType === 'dipole' ? '点電荷' : '平行平板'}の理論値を読み込むにはパスワードを入力してください。<br/>
+              <strong style={{color: '#e74c3c'}}>※現在のモードのデータは上書きされます</strong>
             </p>
             <input
               type="password"
@@ -711,9 +703,12 @@
     function App() {
       const { ROWS, COLS } = GRID_CONFIG;
       
-      const [data, setData] = useState(
-        Array(ROWS).fill(null).map(() => Array(COLS).fill(""))
-      );
+      const [dataSheets, setDataSheets] = useState({
+        none: Array(ROWS).fill(null).map(() => Array(COLS).fill("")),
+        dipole: Array(ROWS).fill(null).map(() => Array(COLS).fill("")),
+        parallel: Array(ROWS).fill(null).map(() => Array(COLS).fill("")),
+      });
+      
       const [electrodeMode, setElectrodeMode] = useState('none');
       const [viewTab, setViewTab] = useState(0);
       const [contourInterval, setContourInterval] = useState(CONTOUR_CONFIG.DEFAULT);
@@ -723,6 +718,9 @@
       const [pendingSampleType, setPendingSampleType] = useState(null);
       
       const inputRefs = useRef([]);
+      const currentZoomRef = useRef(1.5);
+
+      const data = dataSheets[electrodeMode];
 
       const isReferencePoint = useCallback((r, c) => {
         return r === REFERENCE_POINT.row && c === REFERENCE_POINT.col;
@@ -734,33 +732,22 @@
         return mode.electrodes.some(e => e.row === r && e.col === c);
       }, [electrodeMode]);
 
-      const getElectrodeVoltage = useCallback((r, c) => {
+      const getElectrodeInfo = useCallback((r, c) => {
         const mode = ELECTRODE_MODES[electrodeMode];
         if (!mode) return null;
         const electrode = mode.electrodes.find(e => e.row === r && e.col === c);
-        return electrode ? electrode.voltage : null;
-      }, [electrodeMode]);
-
-      React.useEffect(() => {
-        if (electrodeMode !== 'none') {
-          const newData = data.map((row, r) => 
-            row.map((cell, c) => {
-              const voltage = getElectrodeVoltage(r, c);
-              return voltage !== null ? voltage.toFixed(1) : cell;
-            })
-          );
-          setData(newData);
-        }
+        return electrode ? electrode : null;
       }, [electrodeMode]);
 
       const handleCellChange = useCallback((r, c, val) => {
-        if (isElectrode(r, c)) return;
-
         if (val === "") {
           const newData = data.map((row, i) => 
             i === r ? row.map((cell, j) => j === c ? val : cell) : row
           );
-          setData(newData);
+          setDataSheets(prev => ({
+            ...prev,
+            [electrodeMode]: newData
+          }));
           return;
         }
 
@@ -769,9 +756,12 @@
           const newData = data.map((row, i) => 
             i === r ? row.map((cell, j) => j === c ? val : cell) : row
           );
-          setData(newData);
+          setDataSheets(prev => ({
+            ...prev,
+            [electrodeMode]: newData
+          }));
         }
-      }, [data, isElectrode]);
+      }, [data, electrodeMode]);
 
       const handleKeyDown = useCallback((e, r, c) => {
         if (e.key === 'Enter') {
@@ -834,8 +824,12 @@
             return "";
           })
         );
-        setData(newData);
-      }, [ROWS, COLS]);
+        
+        setDataSheets(prev => ({
+          ...prev,
+          [electrodeMode]: newData
+        }));
+      }, [ROWS, COLS, electrodeMode]);
 
       const handleGenerateSample = useCallback((type) => {
         const config = SAMPLE_CONFIGS[type];
@@ -961,6 +955,7 @@
           lastTouch: { x: 0, y: 0 }
         };
 
+        // タッチイベント（iPad用）
         const handleTouchStart = (e) => {
           if (viewTab !== 0) return;
           
@@ -1026,6 +1021,7 @@
             if (touchState.isPinching && plotDiv.layout && plotDiv.layout.scene && plotDiv.layout.scene.camera) {
               const eye = plotDiv.layout.scene.camera.eye;
               touchState.currentZoom = Math.sqrt(eye.x * eye.x + eye.y * eye.y + eye.z * eye.z) / Math.sqrt(1.5*1.5 + 1.5*1.5 + 1.2*1.2);
+              currentZoomRef.current = touchState.currentZoom;
             }
             
             touchState.isPinching = false;
@@ -1041,15 +1037,42 @@
           }
         };
 
+        // マウスホイールイベント（PC用）
+        const handleWheel = (e) => {
+          if (viewTab !== 0) return;
+          
+          e.preventDefault();
+          
+          const delta = e.deltaY || e.detail || e.wheelDelta;
+          const zoomFactor = delta > 0 ? 1.1 : 0.9;
+          
+          const newZoom = currentZoomRef.current * zoomFactor;
+          const clampedZoom = Math.max(0.5, Math.min(5, newZoom));
+          
+          currentZoomRef.current = clampedZoom;
+          
+          Plotly.relayout(plotDiv, {
+            'scene.camera.eye': {
+              x: 1.5 * clampedZoom,
+              y: -1.5 * clampedZoom,
+              z: 1.2 * clampedZoom
+            },
+            'scene.camera.center': { x: 0, y: 0, z: 0 },
+            'scene.camera.up': { x: 0, y: 0, z: 1 }
+          });
+        };
+
         plotDiv.addEventListener('touchstart', handleTouchStart, { passive: false });
         plotDiv.addEventListener('touchmove', handleTouchMove, { passive: false });
         plotDiv.addEventListener('touchend', handleTouchEnd, { passive: false });
+        plotDiv.addEventListener('wheel', handleWheel, { passive: false });
 
         return () => {
           if (plotDiv) {
             plotDiv.removeEventListener('touchstart', handleTouchStart);
             plotDiv.removeEventListener('touchmove', handleTouchMove);
             plotDiv.removeEventListener('touchend', handleTouchEnd);
+            plotDiv.removeEventListener('wheel', handleWheel);
           }
         };
       }, [plotData, viewTab, contourInterval, showSurfaceContours, showProjectedContours]);
@@ -1065,7 +1088,7 @@
 
           <div className="header">
             <h1>等電位線シミュレーター ({ROWS}×{COLS})</h1>
-            <div className="subtitle">測定点：{ROWS * COLS}箇所 | 基準点：D4 = 0V</div>
+            <div className="subtitle">測定点：{ROWS * COLS}箇所 | 基準点：D4 = 0V | モード別データ保��</div>
             <div className="color-legend">
               <div className="color-legend-item">
                 <div className="color-box" style={{background: 'rgba(231, 76, 60, 0.7)'}}></div>
@@ -1086,7 +1109,7 @@
             <div>
               <div className="electrode-mode-panel">
                 <div className="electrode-mode-title">
-                  ⚡ 電極モード選択
+                  ⚡ 電極モード選択（各モード独立したデータ）
                 </div>
                 <div className="mode-buttons">
                   <button 
@@ -1113,7 +1136,7 @@
 
               <div className="panel">
                 <div className="panel-header">
-                  <div className="panel-title">データ入力 (V)</div>
+                  <div className="panel-title">データ入力 (V) - {ELECTRODE_MODES[electrodeMode].label}</div>
                   <div className="button-group">
                     <button onClick={() => handleGenerateSample('dipole')}>
                       🔒 {SAMPLE_CONFIGS.dipole.label}
@@ -1138,6 +1161,7 @@
                       {row.map((val, c) => {
                         const isElec = isElectrode(r, c);
                         const isRef = isReferencePoint(r, c);
+                        const electrodeInfo = getElectrodeInfo(r, c);
                         return (
                           <input
                             key={`${r}-${c}`}
@@ -1150,10 +1174,9 @@
                             min={VOLTAGE_RANGE.MIN}
                             max={VOLTAGE_RANGE.MAX}
                             step="0.1"
-                            disabled={isElec}
                             style={!isElec ? { backgroundColor: getCellBackgroundColor(val, r, c) } : {}}
                             placeholder={`${COLUMN_LABELS[c]}${r + 1}`}
-                            title={isElec ? `${isRef ? '基準点' : '電極'}: ${getElectrodeVoltage(r, c)}V（固定）` : ''}
+                            title={electrodeInfo ? `電極位置: ${electrodeInfo.label}` : ''}
                           />
                         );
                       })}
@@ -1165,23 +1188,22 @@
                   💡 ヒント: Enter/矢印キーでセル移動<br/>
                   📊 入力範囲: {VOLTAGE_RANGE.MIN}V ~ {VOLTAGE_RANGE.MAX}V<br/>
                   🔢 セル位置: 列(A-G) + 行(1-7) 例: A1, D4, G7<br/>
-                  🟢 緑色 = 基準点D4（0V固定）<br/>
-                  🟠 オレンジ色 = 電極（固定値、編集不可）
+                  🟢 緑枠 = 基準点D4（推奨0V）<br/>
+                  🟠 オレンジ枠 = 電極位置（編集可能、マークのみ）<br/>
+                  📋 モード切り替えで各データは保持されます
                 </div>
                 
                 <button 
                   className="clear-button"
                   onClick={() => {
-                    const newData = Array(ROWS).fill(null).map((_, r) => 
-                      Array(COLS).fill(null).map((_, c) => {
-                        const voltage = getElectrodeVoltage(r, c);
-                        return voltage !== null ? voltage.toFixed(1) : "";
-                      })
-                    );
-                    setData(newData);
+                    const newData = Array(ROWS).fill(null).map(() => Array(COLS).fill(""));
+                    setDataSheets(prev => ({
+                      ...prev,
+                      [electrodeMode]: newData
+                    }));
                   }}
                 >
-                  🗑️ 全消去（電極以外）
+                  🗑️ 現在のモードのデータを全消去
                 </button>
               </div>
 
@@ -1255,7 +1277,8 @@
                 
                 {viewTab === 0 && (
                   <div className="touch-hint">
-                    📱 <strong>iPad操作:</strong> 1本指ドラッグで回転 | 2本指ピンチでズーム | ズーム後も1本指で回転可能 | ダブルタップでリセット
+                    📱 <strong>iPad:</strong> 1本指ドラッグで回転 | 2本指ピンチでズーム<br/>
+                    🖱️ <strong>PC:</strong> ドラッグで回転 | マウスホイールでズーム
                   </div>
                 )}
                 
