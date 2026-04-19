@@ -703,7 +703,6 @@
     function App() {
       const { ROWS, COLS } = GRID_CONFIG;
       
-      // 各電極モードごとに独立したデータシートを保持
       const [dataSheets, setDataSheets] = useState({
         none: Array(ROWS).fill(null).map(() => Array(COLS).fill("")),
         dipole: Array(ROWS).fill(null).map(() => Array(COLS).fill("")),
@@ -719,8 +718,8 @@
       const [pendingSampleType, setPendingSampleType] = useState(null);
       
       const inputRefs = useRef([]);
+      const currentZoomRef = useRef(1.5);
 
-      // 現在のモードのデータを取得
       const data = dataSheets[electrodeMode];
 
       const isReferencePoint = useCallback((r, c) => {
@@ -826,7 +825,6 @@
           })
         );
         
-        // 現在のモードのデータシートのみ更新
         setDataSheets(prev => ({
           ...prev,
           [electrodeMode]: newData
@@ -1022,6 +1020,7 @@
             if (touchState.isPinching && plotDiv.layout && plotDiv.layout.scene && plotDiv.layout.scene.camera) {
               const eye = plotDiv.layout.scene.camera.eye;
               touchState.currentZoom = Math.sqrt(eye.x * eye.x + eye.y * eye.y + eye.z * eye.z) / Math.sqrt(1.5*1.5 + 1.5*1.5 + 1.2*1.2);
+              currentZoomRef.current = touchState.currentZoom;
             }
             
             touchState.isPinching = false;
@@ -1037,15 +1036,41 @@
           }
         };
 
+        const handleWheel = (e) => {
+          if (viewTab !== 0) return;
+          
+          e.preventDefault();
+          
+          const delta = e.deltaY || e.detail || e.wheelDelta;
+          const zoomFactor = delta > 0 ? 1.1 : 0.9;
+          
+          const newZoom = currentZoomRef.current * zoomFactor;
+          const clampedZoom = Math.max(0.5, Math.min(5, newZoom));
+          
+          currentZoomRef.current = clampedZoom;
+          
+          Plotly.relayout(plotDiv, {
+            'scene.camera.eye': {
+              x: 1.5 * clampedZoom,
+              y: -1.5 * clampedZoom,
+              z: 1.2 * clampedZoom
+            },
+            'scene.camera.center': { x: 0, y: 0, z: 0 },
+            'scene.camera.up': { x: 0, y: 0, z: 1 }
+          });
+        };
+
         plotDiv.addEventListener('touchstart', handleTouchStart, { passive: false });
         plotDiv.addEventListener('touchmove', handleTouchMove, { passive: false });
         plotDiv.addEventListener('touchend', handleTouchEnd, { passive: false });
+        plotDiv.addEventListener('wheel', handleWheel, { passive: false });
 
         return () => {
           if (plotDiv) {
             plotDiv.removeEventListener('touchstart', handleTouchStart);
             plotDiv.removeEventListener('touchmove', handleTouchMove);
             plotDiv.removeEventListener('touchend', handleTouchEnd);
+            plotDiv.removeEventListener('wheel', handleWheel);
           }
         };
       }, [plotData, viewTab, contourInterval, showSurfaceContours, showProjectedContours]);
@@ -1250,7 +1275,8 @@
                 
                 {viewTab === 0 && (
                   <div className="touch-hint">
-                    📱 <strong>iPad操作:</strong> 1本指ドラッグで回転 | 2本指ピンチでズーム
+                    📱 <strong>iPad:</strong> 1本指ドラッグで回転 | 2本指ピンチでズーム<br/>
+                    🖱️ <strong>PC:</strong> ドラッグで回転 | マウスホイールでズーム
                   </div>
                 )}
                 
