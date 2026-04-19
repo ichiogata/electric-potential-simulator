@@ -718,7 +718,11 @@
       const [pendingSampleType, setPendingSampleType] = useState(null);
       
       const inputRefs = useRef([]);
-      const currentZoomRef = useRef(1.5);
+      const cameraStateRef = useRef({
+        eye: { x: 1.5, y: -1.5, z: 1.2 },
+        center: { x: 0, y: 0, z: 0 },
+        up: { x: 0, y: 0, z: 1 }
+      });
 
       const data = dataSheets[electrodeMode];
 
@@ -924,11 +928,7 @@
               zeroline: false,
             },
             aspectratio: { x: 1, y: 1, z: 0.6 },
-            camera: { 
-              eye: { x: 1.5, y: -1.5, z: 1.2 },
-              center: { x: 0, y: 0, z: 0 },
-              up: { x: 0, y: 0, z: 1 }
-            },
+            camera: cameraStateRef.current,
           },
         };
 
@@ -946,16 +946,25 @@
         const plotDiv = document.getElementById('plot');
         if (!plotDiv) return;
 
+        // Plotlyの回転イベントを監視してカメラ状態を保存
+        plotDiv.on('plotly_relayout', (eventData) => {
+          if (eventData['scene.camera']) {
+            cameraStateRef.current = {
+              eye: eventData['scene.camera'].eye || cameraStateRef.current.eye,
+              center: eventData['scene.camera'].center || cameraStateRef.current.center,
+              up: eventData['scene.camera'].up || cameraStateRef.current.up,
+            };
+          }
+        });
+
         let touchState = {
           fingers: 0,
           startDistance: 0,
-          currentZoom: 1.5,
           isRotating: false,
           isPinching: false,
           lastTouch: { x: 0, y: 0 }
         };
 
-        // タッチイベント（iPad用）
         const handleTouchStart = (e) => {
           if (viewTab !== 0) return;
           
@@ -997,19 +1006,40 @@
             
             if (touchState.startDistance > 0) {
               const scale = currentDistance / touchState.startDistance;
-              const newZoom = touchState.currentZoom / scale;
               
-              const clampedZoom = Math.max(0.5, Math.min(5, newZoom));
+              // 現在のカメラ状態を取得
+              const currentEye = cameraStateRef.current.eye;
+              const currentDistance = Math.sqrt(
+                currentEye.x * currentEye.x + 
+                currentEye.y * currentEye.y + 
+                currentEye.z * currentEye.z
+              );
+              
+              const newDistance = currentDistance / scale;
+              const clampedDistance = Math.max(1.0, Math.min(7.5, newDistance));
+              
+              // 方向を保ったままズーム
+              const direction = {
+                x: currentEye.x / currentDistance,
+                y: currentEye.y / currentDistance,
+                z: currentEye.z / currentDistance
+              };
+              
+              const newEye = {
+                x: direction.x * clampedDistance,
+                y: direction.y * clampedDistance,
+                z: direction.z * clampedDistance
+              };
+              
+              cameraStateRef.current.eye = newEye;
               
               Plotly.relayout(plotDiv, {
-                'scene.camera.eye': {
-                  x: 1.5 * clampedZoom,
-                  y: -1.5 * clampedZoom,
-                  z: 1.2 * clampedZoom
-                },
-                'scene.camera.center': { x: 0, y: 0, z: 0 },
-                'scene.camera.up': { x: 0, y: 0, z: 1 }
+                'scene.camera.eye': newEye,
+                'scene.camera.center': cameraStateRef.current.center,
+                'scene.camera.up': cameraStateRef.current.up
               });
+              
+              touchState.startDistance = currentDistance;
             }
           }
         };
@@ -1018,12 +1048,6 @@
           if (viewTab !== 0) return;
           
           if (e.touches.length === 0) {
-            if (touchState.isPinching && plotDiv.layout && plotDiv.layout.scene && plotDiv.layout.scene.camera) {
-              const eye = plotDiv.layout.scene.camera.eye;
-              touchState.currentZoom = Math.sqrt(eye.x * eye.x + eye.y * eye.y + eye.z * eye.z) / Math.sqrt(1.5*1.5 + 1.5*1.5 + 1.2*1.2);
-              currentZoomRef.current = touchState.currentZoom;
-            }
-            
             touchState.isPinching = false;
             touchState.isRotating = false;
             touchState.startDistance = 0;
@@ -1037,7 +1061,6 @@
           }
         };
 
-        // マウスホイールイベント（PC用）
         const handleWheel = (e) => {
           if (viewTab !== 0) return;
           
@@ -1046,19 +1069,36 @@
           const delta = e.deltaY || e.detail || e.wheelDelta;
           const zoomFactor = delta > 0 ? 1.1 : 0.9;
           
-          const newZoom = currentZoomRef.current * zoomFactor;
-          const clampedZoom = Math.max(0.5, Math.min(5, newZoom));
+          // 現在のカメラ状態を取得
+          const currentEye = cameraStateRef.current.eye;
+          const currentDistance = Math.sqrt(
+            currentEye.x * currentEye.x + 
+            currentEye.y * currentEye.y + 
+            currentEye.z * currentEye.z
+          );
           
-          currentZoomRef.current = clampedZoom;
+          const newDistance = currentDistance * zoomFactor;
+          const clampedDistance = Math.max(1.0, Math.min(7.5, newDistance));
+          
+          // 方向を保ったままズーム
+          const direction = {
+            x: currentEye.x / currentDistance,
+            y: currentEye.y / currentDistance,
+            z: currentEye.z / currentDistance
+          };
+          
+          const newEye = {
+            x: direction.x * clampedDistance,
+            y: direction.y * clampedDistance,
+            z: direction.z * clampedDistance
+          };
+          
+          cameraStateRef.current.eye = newEye;
           
           Plotly.relayout(plotDiv, {
-            'scene.camera.eye': {
-              x: 1.5 * clampedZoom,
-              y: -1.5 * clampedZoom,
-              z: 1.2 * clampedZoom
-            },
-            'scene.camera.center': { x: 0, y: 0, z: 0 },
-            'scene.camera.up': { x: 0, y: 0, z: 1 }
+            'scene.camera.eye': newEye,
+            'scene.camera.center': cameraStateRef.current.center,
+            'scene.camera.up': cameraStateRef.current.up
           });
         };
 
@@ -1088,7 +1128,7 @@
 
           <div className="header">
             <h1>等電位線シミュレーター ({ROWS}×{COLS})</h1>
-            <div className="subtitle">測定点：{ROWS * COLS}箇所 | 基準点：D4 = 0V | モード別データ保��</div>
+            <div className="subtitle">測定点：{ROWS * COLS}箇所 | 基準点：D4 = 0V | モード別データ保持</div>
             <div className="color-legend">
               <div className="color-legend-item">
                 <div className="color-box" style={{background: 'rgba(231, 76, 60, 0.7)'}}></div>
