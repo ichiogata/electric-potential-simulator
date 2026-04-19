@@ -703,6 +703,7 @@
     function App() {
       const { ROWS, COLS } = GRID_CONFIG;
       
+      // 各電極モードごとに独立したデータシートを保持
       const [dataSheets, setDataSheets] = useState({
         none: Array(ROWS).fill(null).map(() => Array(COLS).fill("")),
         dipole: Array(ROWS).fill(null).map(() => Array(COLS).fill("")),
@@ -718,12 +719,8 @@
       const [pendingSampleType, setPendingSampleType] = useState(null);
       
       const inputRefs = useRef([]);
-      const cameraStateRef = useRef({
-        eye: { x: 1.5, y: -1.5, z: 1.2 },
-        center: { x: 0, y: 0, z: 0 },
-        up: { x: 0, y: 0, z: 1 }
-      });
 
+      // 現在のモードのデータを取得
       const data = dataSheets[electrodeMode];
 
       const isReferencePoint = useCallback((r, c) => {
@@ -829,6 +826,7 @@
           })
         );
         
+        // 現在のモードのデータシートのみ更新
         setDataSheets(prev => ({
           ...prev,
           [electrodeMode]: newData
@@ -928,7 +926,11 @@
               zeroline: false,
             },
             aspectratio: { x: 1, y: 1, z: 0.6 },
-            camera: cameraStateRef.current,
+            camera: { 
+              eye: { x: 1.5, y: -1.5, z: 1.2 },
+              center: { x: 0, y: 0, z: 0 },
+              up: { x: 0, y: 0, z: 1 }
+            },
           },
         };
 
@@ -946,29 +948,24 @@
         const plotDiv = document.getElementById('plot');
         if (!plotDiv) return;
 
-        // Plotlyの回転イベントを監視してカメラ状態を保存
-        plotDiv.on('plotly_relayout', (eventData) => {
-          if (eventData['scene.camera']) {
-            cameraStateRef.current = {
-              eye: eventData['scene.camera'].eye || cameraStateRef.current.eye,
-              center: eventData['scene.camera'].center || cameraStateRef.current.center,
-              up: eventData['scene.camera'].up || cameraStateRef.current.up,
-            };
-          }
-        });
-
         let touchState = {
+          fingers: 0,
           startDistance: 0,
+          currentZoom: 1.5,
+          isRotating: false,
           isPinching: false,
+          lastTouch: { x: 0, y: 0 }
         };
 
         const handleTouchStart = (e) => {
           if (viewTab !== 0) return;
           
+          touchState.fingers = e.touches.length;
+          
           if (e.touches.length === 2) {
             e.preventDefault();
-            e.stopPropagation();
             touchState.isPinching = true;
+            touchState.isRotating = false;
             
             const touch1 = e.touches[0];
             const touch2 = e.touches[1];
@@ -976,6 +973,13 @@
               touch2.clientX - touch1.clientX,
               touch2.clientY - touch1.clientY
             );
+          } else if (e.touches.length === 1) {
+            touchState.isRotating = true;
+            touchState.isPinching = false;
+            touchState.lastTouch = {
+              x: e.touches[0].clientX,
+              y: e.touches[0].clientY
+            };
           }
         };
 
@@ -984,7 +988,6 @@
 
           if (e.touches.length === 2 && touchState.isPinching) {
             e.preventDefault();
-            e.stopPropagation();
             
             const touch1 = e.touches[0];
             const touch2 = e.touches[1];
@@ -995,40 +998,19 @@
             
             if (touchState.startDistance > 0) {
               const scale = currentDistance / touchState.startDistance;
+              const newZoom = touchState.currentZoom / scale;
               
-              // 現在のカメラ状態を取得
-              const currentEye = cameraStateRef.current.eye;
-              const currentCameraDistance = Math.sqrt(
-                currentEye.x * currentEye.x + 
-                currentEye.y * currentEye.y + 
-                currentEye.z * currentEye.z
-              );
-              
-              const newDistance = currentCameraDistance / scale;
-              const clampedDistance = Math.max(1.0, Math.min(7.5, newDistance));
-              
-              // 方向を���ったままズーム
-              const direction = {
-                x: currentEye.x / currentCameraDistance,
-                y: currentEye.y / currentCameraDistance,
-                z: currentEye.z / currentCameraDistance
-              };
-              
-              const newEye = {
-                x: direction.x * clampedDistance,
-                y: direction.y * clampedDistance,
-                z: direction.z * clampedDistance
-              };
-              
-              cameraStateRef.current.eye = newEye;
+              const clampedZoom = Math.max(0.5, Math.min(5, newZoom));
               
               Plotly.relayout(plotDiv, {
-                'scene.camera.eye': newEye,
-                'scene.camera.center': cameraStateRef.current.center,
-                'scene.camera.up': cameraStateRef.current.up
+                'scene.camera.eye': {
+                  x: 1.5 * clampedZoom,
+                  y: -1.5 * clampedZoom,
+                  z: 1.2 * clampedZoom
+                },
+                'scene.camera.center': { x: 0, y: 0, z: 0 },
+                'scene.camera.up': { x: 0, y: 0, z: 1 }
               });
-              
-              touchState.startDistance = currentDistance;
             }
           }
         };
@@ -1036,64 +1018,34 @@
         const handleTouchEnd = (e) => {
           if (viewTab !== 0) return;
           
-          if (e.touches.length < 2) {
+          if (e.touches.length === 0) {
+            if (touchState.isPinching && plotDiv.layout && plotDiv.layout.scene && plotDiv.layout.scene.camera) {
+              const eye = plotDiv.layout.scene.camera.eye;
+              touchState.currentZoom = Math.sqrt(eye.x * eye.x + eye.y * eye.y + eye.z * eye.z) / Math.sqrt(1.5*1.5 + 1.5*1.5 + 1.2*1.2);
+            }
+            
             touchState.isPinching = false;
+            touchState.isRotating = false;
             touchState.startDistance = 0;
+          } else if (e.touches.length === 1) {
+            touchState.isPinching = false;
+            touchState.isRotating = true;
+            touchState.lastTouch = {
+              x: e.touches[0].clientX,
+              y: e.touches[0].clientY
+            };
           }
-        };
-
-        const handleWheel = (e) => {
-          if (viewTab !== 0) return;
-          
-          e.preventDefault();
-          
-          const delta = e.deltaY || e.detail || e.wheelDelta;
-          const zoomFactor = delta > 0 ? 1.1 : 0.9;
-          
-          // 現在のカメラ状態を取得
-          const currentEye = cameraStateRef.current.eye;
-          const currentDistance = Math.sqrt(
-            currentEye.x * currentEye.x + 
-            currentEye.y * currentEye.y + 
-            currentEye.z * currentEye.z
-          );
-          
-          const newDistance = currentDistance * zoomFactor;
-          const clampedDistance = Math.max(1.0, Math.min(7.5, newDistance));
-          
-          // 方向を保ったままズーム
-          const direction = {
-            x: currentEye.x / currentDistance,
-            y: currentEye.y / currentDistance,
-            z: currentEye.z / currentDistance
-          };
-          
-          const newEye = {
-            x: direction.x * clampedDistance,
-            y: direction.y * clampedDistance,
-            z: direction.z * clampedDistance
-          };
-          
-          cameraStateRef.current.eye = newEye;
-          
-          Plotly.relayout(plotDiv, {
-            'scene.camera.eye': newEye,
-            'scene.camera.center': cameraStateRef.current.center,
-            'scene.camera.up': cameraStateRef.current.up
-          });
         };
 
         plotDiv.addEventListener('touchstart', handleTouchStart, { passive: false });
         plotDiv.addEventListener('touchmove', handleTouchMove, { passive: false });
         plotDiv.addEventListener('touchend', handleTouchEnd, { passive: false });
-        plotDiv.addEventListener('wheel', handleWheel, { passive: false });
 
         return () => {
           if (plotDiv) {
             plotDiv.removeEventListener('touchstart', handleTouchStart);
             plotDiv.removeEventListener('touchmove', handleTouchMove);
             plotDiv.removeEventListener('touchend', handleTouchEnd);
-            plotDiv.removeEventListener('wheel', handleWheel);
           }
         };
       }, [plotData, viewTab, contourInterval, showSurfaceContours, showProjectedContours]);
@@ -1298,8 +1250,7 @@
                 
                 {viewTab === 0 && (
                   <div className="touch-hint">
-                    📱 <strong>iPad:</strong> 1本指ドラッグで回転 | 2本指ピンチでズーム<br/>
-                    🖱️ <strong>PC:</strong> ドラッグで回転 | マウスホイールでズーム
+                    📱 <strong>iPad操作:</strong> 1本指ドラッグで回転 | 2本指ピンチでズーム
                   </div>
                 )}
                 
