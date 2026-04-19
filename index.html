@@ -958,22 +958,17 @@
         });
 
         let touchState = {
-          fingers: 0,
           startDistance: 0,
-          isRotating: false,
           isPinching: false,
-          lastTouch: { x: 0, y: 0 }
         };
 
         const handleTouchStart = (e) => {
           if (viewTab !== 0) return;
           
-          touchState.fingers = e.touches.length;
-          
           if (e.touches.length === 2) {
             e.preventDefault();
+            e.stopPropagation();
             touchState.isPinching = true;
-            touchState.isRotating = false;
             
             const touch1 = e.touches[0];
             const touch2 = e.touches[1];
@@ -981,13 +976,6 @@
               touch2.clientX - touch1.clientX,
               touch2.clientY - touch1.clientY
             );
-          } else if (e.touches.length === 1) {
-            touchState.isRotating = true;
-            touchState.isPinching = false;
-            touchState.lastTouch = {
-              x: e.touches[0].clientX,
-              y: e.touches[0].clientY
-            };
           }
         };
 
@@ -996,6 +984,7 @@
 
           if (e.touches.length === 2 && touchState.isPinching) {
             e.preventDefault();
+            e.stopPropagation();
             
             const touch1 = e.touches[0];
             const touch2 = e.touches[1];
@@ -1009,20 +998,20 @@
               
               // 現在のカメラ状態を取得
               const currentEye = cameraStateRef.current.eye;
-              const currentDistance = Math.sqrt(
+              const currentCameraDistance = Math.sqrt(
                 currentEye.x * currentEye.x + 
                 currentEye.y * currentEye.y + 
                 currentEye.z * currentEye.z
               );
               
-              const newDistance = currentDistance / scale;
+              const newDistance = currentCameraDistance / scale;
               const clampedDistance = Math.max(1.0, Math.min(7.5, newDistance));
               
-              // 方向を保ったままズーム
+              // 方向を���ったままズーム
               const direction = {
-                x: currentEye.x / currentDistance,
-                y: currentEye.y / currentDistance,
-                z: currentEye.z / currentDistance
+                x: currentEye.x / currentCameraDistance,
+                y: currentEye.y / currentCameraDistance,
+                z: currentEye.z / currentCameraDistance
               };
               
               const newEye = {
@@ -1047,17 +1036,9 @@
         const handleTouchEnd = (e) => {
           if (viewTab !== 0) return;
           
-          if (e.touches.length === 0) {
+          if (e.touches.length < 2) {
             touchState.isPinching = false;
-            touchState.isRotating = false;
             touchState.startDistance = 0;
-          } else if (e.touches.length === 1) {
-            touchState.isPinching = false;
-            touchState.isRotating = true;
-            touchState.lastTouch = {
-              x: e.touches[0].clientX,
-              y: e.touches[0].clientY
-            };
           }
         };
 
